@@ -37,12 +37,12 @@ const verifyToken = async (req, res, next) => {
   const authHeader = req.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    res.status(401).send({ msg: "Unauthorized" });
+    return res.status(401).send({ msg: "Unauthorized" }); // return যোগ করা হলো
   }
 
   const token = authHeader.split(" ")[1];
   if (!token) {
-   return res.status(401).send({ msg: "Unauthorized" });
+    return res.status(401).send({ msg: "Unauthorized" }); // return যোগ করা হলো
   }
 
   try {
@@ -50,8 +50,7 @@ const verifyToken = async (req, res, next) => {
     req.user = payload;
     next();
   } catch (error) {
-    
-   return res.status(401).send({ msg: "Unauthorized" });
+    return res.status(401).send({ msg: "Unauthorized" }); // return যোগ করা হলো
   }
 };
 
@@ -65,6 +64,22 @@ async function run() {
     const recipeCollection = db.collection("all_recipe");
     const paymentCollection = db.collection("payment");
     const FREE_LIMIT = 2;
+
+    const optionalVerifyToken = async (req, res, next) => {
+      const authHeader = req.headers.authorization;
+      if (!authHeader || !authHeader.startsWith("Bearer ")) {
+        req.user = null;
+        return next();
+      }
+      const token = authHeader.split(" ")[1];
+      try {
+        const { payload } = await jwtVerify(token, JWKS);
+        req.user = payload;
+      } catch (error) {
+        req.user = null;
+      }
+      next();
+    };
 
     // /add-recipe রুট প্রতিস্থাপন করো — verifyToken + limit check যোগ
     app.post("/add-recipe", verifyToken, async (req, res) => {
@@ -196,13 +211,148 @@ async function run() {
       }
     });
 
-    app.get("/recipes/:id", async (req, res) => {
+    // GET /recipes/:id — প্রতিস্থাপন করো, isLiked/isFavourited flag যোগ করা হলো
+    app.get("/recipes/:id", optionalVerifyToken, async (req, res) => {
       try {
         const { id } = req.params;
-        const result = await recipeCollection.findOne({
+        const recipe = await recipeCollection.findOne({
           _id: new ObjectId(id),
         });
-        res.send(result);
+
+        if (!recipe) {
+          return res.status(404).send({ error: "Recipe not found" });
+        }
+
+        let isLiked = false;
+        let isFavourited = false;
+
+        if (req.user) {
+          isLiked = (recipe.likedBy || []).some(
+            (l) => l.userId === req.user.id,
+          );
+
+          const userDoc = await userCollection.findOne({
+            _id: new ObjectId(req.user.id),
+          });
+          isFavourited = (userDoc?.favouriteRecipeIds || []).includes(id);
+        }
+
+        res.send({ ...recipe, isLiked, isFavourited });
+      } catch (error) {
+        res.status(500).send({ success: false, error: error.message });
+      }
+    });
+
+    // app.get("/recipes/:id", async (req, res) => {
+    //   try {
+    //     const { id } = req.params;
+    //     const result = await recipeCollection.findOne({
+    //       _id: new ObjectId(id),
+    //     });
+    //     res.send(result);
+    //   } catch (error) {
+    //     res.status(500).send({ success: false, error: error.message });
+    //   }
+    // });
+
+    // POST /recipes/:id/like — টগল লাইক
+    app.post("/recipes/:id/like", verifyToken, async (req, res) => {
+      try {
+        const { id } = req.params;
+        const user = req.user;
+
+        const recipe = await recipeCollection.findOne({
+          _id: new ObjectId(id),
+        });
+        if (!recipe) {
+          return res.status(404).send({ error: "Recipe not found" });
+        }
+
+        const alreadyLiked = (recipe.likedBy || []).some(
+          (l) => l.userId === user.id,
+        );
+
+        if (alreadyLiked) {
+          await recipeCollection.updateOne(
+            { _id: new ObjectId(id) },
+            {
+              $pull: { likedBy: { userId: user.id } },
+              $inc: { like: -1 },
+            },
+          );
+          return res.send({ liked: false });
+        } else {
+          await recipeCollection.updateOne(
+            { _id: new ObjectId(id) },
+            {
+              $push: {
+                likedBy: { userId: user.id, userName: user.name || user.email },
+              },
+              $inc: { like: 1 },
+            },
+          );
+          return res.send({ liked: true });
+        }
+      } catch (error) {
+        res.status(500).send({ success: false, error: error.message });
+      }
+    });
+
+    // POST /recipes/:id/favourite — টগল ফেভারিট (user ডকুমেন্টে সেভ হয়)
+    app.post("/recipes/:id/favourite", verifyToken, async (req, res) => {
+      try {
+        const { id } = req.params;
+        const user = req.user;
+
+        const userDoc = await userCollection.findOne({
+          _id: new ObjectId(user.id),
+        });
+
+        const isFavourited = (userDoc?.favouriteRecipeIds || []).includes(id);
+
+        if (isFavourited) {
+          await userCollection.updateOne(
+            { _id: new ObjectId(user.id) },
+            { $pull: { favouriteRecipeIds: id } },
+          );
+          return res.send({ favourited: false });
+        } else {
+          await userCollection.updateOne(
+            { _id: new ObjectId(user.id) },
+            { $addToSet: { favouriteRecipeIds: id } },
+          );
+          return res.send({ favourited: true });
+        }
+      } catch (error) {
+        res.status(500).send({ success: false, error: error.message });
+      }
+    });
+
+    // GET /customer/my-favourites — favourite করা রেসিপিগুলোর লিস্ট (paginated)
+    app.get("/customer/my-favourites", verifyToken, async (req, res) => {
+      try {
+        const user = req.user;
+        const page = Number(req.query.page) || 1;
+        const limit = Number(req.query.limit) || 8;
+        const skip = (page - 1) * limit;
+
+        const userDoc = await userCollection.findOne({
+          _id: new ObjectId(user.id),
+        });
+        const favIds = userDoc?.favouriteRecipeIds || [];
+
+        const objectIds = favIds.map((fid) => new ObjectId(fid));
+
+        const total_data = objectIds.length;
+        const total_page = Math.ceil(total_data / limit);
+
+        const data = await recipeCollection
+          .find({ _id: { $in: objectIds } })
+          .skip(skip)
+          .limit(limit)
+          .toArray();
+
+        res.send({ data, total_page, page, total_data });
       } catch (error) {
         res.status(500).send({ success: false, error: error.message });
       }
@@ -226,6 +376,33 @@ async function run() {
         .limit(limit)
         .toArray();
       res.send({ total_page, skip, page, data });
+    });
+
+    // GET /customer/my-recipes-overview — নিজের রেসিপিতে পাওয়া লাইক সামারি
+    app.get("/customer/my-recipes-overview", verifyToken, async (req, res) => {
+      try {
+        const user = req.user;
+
+        const myRecipes = await recipeCollection
+          .find({ userId: user.id })
+          .project({
+            recipeName: 1,
+            recipeImage: 1,
+            like: 1,
+            likedBy: 1,
+          })
+          .toArray();
+
+        const totalLikes = myRecipes.reduce((sum, r) => sum + (r.like || 0), 0);
+
+        res.send({
+          totalRecipes: myRecipes.length,
+          totalLikes,
+          recipes: myRecipes,
+        });
+      } catch (error) {
+        res.status(500).send({ success: false, error: error.message });
+      }
     });
 
     app.post("/payment", async (req, res) => {
