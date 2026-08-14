@@ -148,7 +148,6 @@ async function run() {
       }
     });
 
-    // backend /recipes route (search + filters + pagination)
     app.get("/recipes", async (req, res) => {
       try {
         const page = parseInt(req.query.page) || 1;
@@ -211,7 +210,6 @@ async function run() {
       }
     });
 
-    // GET /recipes/:id — প্রতিস্থাপন করো, isLiked/isFavourited flag যোগ করা হলো
     app.get("/recipes/:id", optionalVerifyToken, async (req, res) => {
       try {
         const { id } = req.params;
@@ -243,19 +241,6 @@ async function run() {
       }
     });
 
-    // app.get("/recipes/:id", async (req, res) => {
-    //   try {
-    //     const { id } = req.params;
-    //     const result = await recipeCollection.findOne({
-    //       _id: new ObjectId(id),
-    //     });
-    //     res.send(result);
-    //   } catch (error) {
-    //     res.status(500).send({ success: false, error: error.message });
-    //   }
-    // });
-
-    // POST /recipes/:id/like — টগল লাইক
     app.post("/recipes/:id/like", verifyToken, async (req, res) => {
       try {
         const { id } = req.params;
@@ -298,7 +283,6 @@ async function run() {
       }
     });
 
-    // POST /recipes/:id/favourite — টগল ফেভারিট (user ডকুমেন্টে সেভ হয়)
     app.post("/recipes/:id/favourite", verifyToken, async (req, res) => {
       try {
         const { id } = req.params;
@@ -307,6 +291,10 @@ async function run() {
         const userDoc = await userCollection.findOne({
           _id: new ObjectId(user.id),
         });
+
+        if (!userDoc) {
+          return res.status(404).send({ error: "User not found in DB" });
+        }
 
         const isFavourited = (userDoc?.favouriteRecipeIds || []).includes(id);
 
@@ -328,7 +316,7 @@ async function run() {
       }
     });
 
-    // GET /customer/my-favourites — favourite করা রেসিপিগুলোর লিস্ট (paginated)
+    // GET /customer/my-favourites এ
     app.get("/customer/my-favourites", verifyToken, async (req, res) => {
       try {
         const user = req.user;
@@ -337,7 +325,7 @@ async function run() {
         const skip = (page - 1) * limit;
 
         const userDoc = await userCollection.findOne({
-          _id: new ObjectId(user.id),
+          _id: new ObjectId(user.id), // ফিক্স
         });
         const favIds = userDoc?.favouriteRecipeIds || [];
 
@@ -378,7 +366,53 @@ async function run() {
       res.send({ total_page, skip, page, data });
     });
 
-    // GET /customer/my-recipes-overview — নিজের রেসিপিতে পাওয়া লাইক সামারি
+    // index.js — run() এর ভেতরে যোগ করো
+    app.get("/customer/my-purchased", verifyToken, async (req, res) => {
+      try {
+        const user = req.user;
+        const page = Number(req.query.page) || 1;
+        const limit = Number(req.query.limit) || 8;
+        const skip = (page - 1) * limit;
+
+        const total_data = await paymentCollection.countDocuments({
+          userId: user.id,
+        });
+        const total_page = Math.ceil(total_data / limit);
+
+        const purchases = await paymentCollection
+          .find({ userId: user.id })
+          .sort({ _id: -1 })
+          .skip(skip)
+          .limit(limit)
+          .toArray();
+
+        // প্রতিটা purchase এর সাথে সংশ্লিষ্ট রেসিপির (ছবি, ক্যাটাগরি ইত্যাদি) ডিটেইল জুড়ে দাও
+        const recipeIds = purchases
+          .filter((p) => p.recipeId)
+          .map((p) => new ObjectId(p.recipeId));
+
+        const recipes = await recipeCollection
+          .find({ _id: { $in: recipeIds } })
+          .toArray();
+
+        const data = purchases.map((purchase) => {
+          const recipe = recipes.find(
+            (r) => r._id.toString() === purchase.recipeId,
+          );
+          return {
+            ...purchase,
+            recipeImage: recipe?.recipeImage || null,
+            category: recipe?.category || null,
+            cuisineType: recipe?.cuisineType || null,
+          };
+        });
+
+        res.send({ data, total_page, page, total_data });
+      } catch (error) {
+        res.status(500).send({ success: false, error: error.message });
+      }
+    });
+
     app.get("/customer/my-recipes-overview", verifyToken, async (req, res) => {
       try {
         const user = req.user;
