@@ -240,6 +240,82 @@ async function run() {
         res.status(500).send({ success: false, error: error.message });
       }
     });
+    // index.js — run() এর ভেতরে যোগ করো
+    app.patch("/recipes/:id", verifyToken, async (req, res) => {
+      try {
+        const { id } = req.params;
+        const user = req.user;
+        const updateData = req.body;
+
+        const recipe = await recipeCollection.findOne({
+          _id: new ObjectId(id),
+        });
+
+        if (!recipe) {
+          return res
+            .status(404)
+            .send({ success: false, error: "Recipe not found" });
+        }
+
+        if (recipe.userId !== user.id) {
+          return res
+            .status(403)
+            .send({
+              success: false,
+              error: "You can only update your own recipes",
+            });
+        }
+
+        // এই ফিল্ডগুলো ইউজার আপডেট করতে পারবে না
+        delete updateData._id;
+        delete updateData.userId;
+        delete updateData.userName;
+        delete updateData.userEmail;
+        delete updateData.like;
+        delete updateData.likedBy;
+
+        await recipeCollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: updateData },
+        );
+
+        res.send({ success: true });
+      } catch (error) {
+        res.status(500).send({ success: false, error: error.message });
+      }
+    });
+
+    app.delete("/recipes/:id", verifyToken, async (req, res) => {
+      try {
+        const { id } = req.params;
+        const user = req.user;
+
+        const recipe = await recipeCollection.findOne({
+          _id: new ObjectId(id),
+        });
+
+        if (!recipe) {
+          return res
+            .status(404)
+            .send({ success: false, error: "Recipe not found" });
+        }
+
+        if (recipe.userId !== user.id) {
+          return res
+            .status(403)
+            .send({
+              success: false,
+              error: "You can only delete your own recipes",
+            });
+        }
+
+        await recipeCollection.deleteOne({ _id: new ObjectId(id) });
+
+        res.send({ success: true });
+      } catch (error) {
+        res.status(500).send({ success: false, error: error.message });
+      }
+    });
 
     app.post("/recipes/:id/like", verifyToken, async (req, res) => {
       try {
@@ -283,38 +359,7 @@ async function run() {
       }
     });
 
-    app.post("/recipes/:id/favourite", verifyToken, async (req, res) => {
-      try {
-        const { id } = req.params;
-        const user = req.user;
-
-        const userDoc = await userCollection.findOne({
-          _id: new ObjectId(user.id),
-        });
-
-        if (!userDoc) {
-          return res.status(404).send({ error: "User not found in DB" });
-        }
-
-        const isFavourited = (userDoc?.favouriteRecipeIds || []).includes(id);
-
-        if (isFavourited) {
-          await userCollection.updateOne(
-            { _id: new ObjectId(user.id) },
-            { $pull: { favouriteRecipeIds: id } },
-          );
-          return res.send({ favourited: false });
-        } else {
-          await userCollection.updateOne(
-            { _id: new ObjectId(user.id) },
-            { $addToSet: { favouriteRecipeIds: id } },
-          );
-          return res.send({ favourited: true });
-        }
-      } catch (error) {
-        res.status(500).send({ success: false, error: error.message });
-      }
-    });
+    
 
     // GET /customer/my-favourites এ
     app.get("/customer/my-favourites", verifyToken, async (req, res) => {
