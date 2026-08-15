@@ -322,6 +322,101 @@ async function run() {
       }
     });
 
+    // index.js — run() এর ভেতরে যোগ করো
+
+  
+    // index.js — /recipes/:id/report রুট প্রতিস্থাপন করো
+    app.post("/recipes/:id/report", verifyToken, async (req, res) => {
+      try {
+        const { id } = req.params;
+        const user = req.user;
+        const { reason, details } = req.body;
+
+        const validReasons = ["Spam", "Offensive Content", "Copyright Issue"];
+        if (!validReasons.includes(reason)) {
+          return res
+            .status(400)
+            .send({ success: false, error: "Invalid reason" });
+        }
+
+        const recipe = await recipeCollection.findOne({
+          _id: new ObjectId(id),
+        });
+        if (!recipe) {
+          return res
+            .status(404)
+            .send({ success: false, error: "Recipe not found" });
+        }
+
+        const alreadyReported = await reportCollection.findOne({
+          recipeId: id,
+          reportedBy: user.id,
+        });
+
+        if (alreadyReported) {
+          return res.status(400).send({
+            success: false,
+            error: "তুমি এই রেসিপি আগেই রিপোর্ট করেছ",
+          });
+        }
+
+        await reportCollection.insertOne({
+          recipeId: id,
+          recipeName: recipe.recipeName,
+          reason,
+          details: details || "",
+          reportedBy: user.id,
+          reportedByName: user.name || user.email,
+          status: "pending",
+          createdAt: new Date(),
+        });
+
+        res.send({ success: true });
+      } catch (error) {
+        res.status(500).send({ success: false, error: error.message });
+      }
+    });
+
+    // Admin — সব রিপোর্ট লিস্ট (paginated)
+    app.get("/admin/reports", verifyAdmin, async (req, res) => {
+      try {
+        const page = Number(req.query.page) || 1;
+        const limit = Number(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
+
+        const total_data = await reportCollection.countDocuments();
+        const total_page = Math.ceil(total_data / limit);
+
+        const data = await reportCollection
+          .find()
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(limit)
+          .toArray();
+
+        res.send({ data, total_page, page, total_data });
+      } catch (error) {
+        res.status(500).send({ success: false, error: error.message });
+      }
+    });
+
+    // Admin — রিপোর্ট resolve/dismiss করা
+    app.patch("/admin/reports/:id", verifyAdmin, async (req, res) => {
+      try {
+        const { id } = req.params;
+        const { status } = req.body; // "resolved" বা "dismissed"
+
+        await reportCollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: { status } },
+        );
+
+        res.send({ success: true });
+      } catch (error) {
+        res.status(500).send({ success: false, error: error.message });
+      }
+    });
+
     app.get("/customer/recipe-status", verifyToken, async (req, res) => {
       try {
         const user = req.user;
