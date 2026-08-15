@@ -1,5 +1,5 @@
 const dns = require("node:dns");
-// dns.setServers(["1.1.1.1", "1.0.0.1"]);
+dns.setServers(["1.1.1.1", "1.0.0.1"]);
 
 const express = require("express");
 const dontenv = require("dotenv");
@@ -33,6 +33,8 @@ const JWKS = createRemoteJWKSet(
   new URL(`${process.env.CLIENT_URL}/api/auth/jwks`),
 );
 
+let userCollection;
+
 const verifyToken = async (req, res, next) => {
   const authHeader = req.headers.authorization;
 
@@ -54,16 +56,134 @@ const verifyToken = async (req, res, next) => {
   }
 };
 
+const verifyAdmin = async (req, res, next) => {
+  const authHeader = req.headers.authorization;
+
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return res.status(401).send({ msg: "Unauthorized" });
+  }
+
+  const token = authHeader.split(" ")[1];
+  if (!token) {
+    return res.status(401).send({ msg: "Unauthorized" });
+  }
+
+  try {
+    const { payload } = await jwtVerify(token, JWKS);
+
+    if (payload.role !== "admin") {
+      return res.status(403).send({ msg: "Forbidden: Admins only" });
+    }
+
+    req.user = payload;
+    next();
+  } catch (error) {
+    return res.status(401).send({ msg: "Unauthorized" });
+  }
+};
+
 
 async function run() {
   try {
     await client.connect();
 
     const db = client.db("recipe");
-    const userCollection = client.db("recipe").collection("user");
+    userCollection = client.db("recipe").collection("user");
     const recipeCollection = db.collection("all_recipe");
     const paymentCollection = db.collection("payment");
+    const reportCollection = client.db("recipe").collection("report");
     const FREE_LIMIT = 2;
+
+    app.get("/admin/overview", verifyAdmin, async (req, res) => {
+      try {
+        const totalUsers = await userCollection.countDocuments();
+        const totalRecipes = await recipeCollection.countDocuments();
+        const totalPremiumMembers = await userCollection.countDocuments({
+          plan: "premium",
+        });
+        const totalReports = await reportCollection.countDocuments();
+
+        res.send({
+          totalUsers,
+          totalRecipes,
+          totalPremiumMembers,
+          totalReports,
+        });
+      } catch (error) {
+        res.status(500).send({ success: false, error: error.message });
+      }
+    });
+
+    // index.js — run() এর ভেতরে যোগ করো
+    app.get("/admin/users", verifyAdmin, async (req, res) => {
+      try {
+        const page = Number(req.query.page) || 1;
+        const limit = Number(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
+        const search = req.query.search || "";
+
+        const query = search
+          ? {
+              $or: [
+                { name: { $regex: search, $options: "i" } },
+                { email: { $regex: search, $options: "i" } },
+              ],
+            }
+          : {};
+
+        const total_data = await userCollection.countDocuments(query);
+        const total_page = Math.ceil(total_data / limit);
+
+        const users = await userCollection
+          .find(query)
+          .project({
+            name: 1,
+            email: 1,
+            role: 1,
+            plan: 1,
+            blocked: 1,
+            image: 1,
+            createdAt: 1,
+          })
+          .skip(skip)
+          .limit(limit)
+          .toArray();
+
+        res.send({ data: users, total_page, page, total_data });
+      } catch (error) {
+        res.status(500).send({ success: false, error: error.message });
+      }
+    });
+
+    app.patch("/admin/users/:id/block", verifyAdmin, async (req, res) => {
+      try {
+        const { id } = req.params;
+
+        await userCollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: { blocked: true } },
+        );
+
+        res.send({ success: true });
+      } catch (error) {
+        res.status(500).send({ success: false, error: error.message });
+      }
+    });
+
+    app.patch("/admin/users/:id/unblock", verifyAdmin, async (req, res) => {
+      try {
+        const { id } = req.params;
+
+        await userCollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: { blocked: false } },
+        );
+
+        res.send({ success: true });
+      } catch (error) {
+        res.status(500).send({ success: false, error: error.message });
+      }
+    });
 
     const optionalVerifyToken = async (req, res, next) => {
       const authHeader = req.headers.authorization;
@@ -81,7 +201,98 @@ async function run() {
       next();
     };
 
-    // /add-recipe রুট প্রতিস্থাপন করো — verifyToken + limit check যোগ
+    // index.js — run() এর ভেতরে যোগ করো
+
+    // সব রেসিপি (টেবিল আকারে, paginated)
+    app.get("/admin/recipes", verifyAdmin, async (req, res) => {
+      try {
+        const page = Number(req.query.page) || 1;
+        const limit = Number(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
+        const search = req.query.search || "";
+
+        const query = search
+          ? { recipeName: { $regex: search, $options: "i" } }
+          : {};
+
+        const total_data = await recipeCollection.countDocuments(query);
+        const total_page = Math.ceil(total_data / limit);
+
+        const recipes = await recipeCollection
+          .find(query)
+          .sort({ _id: -1 })
+          .skip(skip)
+          .limit(limit)
+          .toArray();
+
+        res.send({ data: recipes, total_page, page, total_data });
+      } catch (error) {
+        res.status(500).send({ success: false, error: error.message });
+      }
+    });
+
+    // Admin দিয়ে যেকোনো রেসিপি ডিলিট
+    app.delete("/admin/recipes/:id", verifyAdmin, async (req, res) => {
+      try {
+        const { id } = req.params;
+        await recipeCollection.deleteOne({ _id: new ObjectId(id) });
+        res.send({ success: true });
+      } catch (error) {
+        res.status(500).send({ success: false, error: error.message });
+      }
+    });
+
+    // Admin দিয়ে যেকোনো রেসিপি এডিট
+    app.patch("/admin/recipes/:id", verifyAdmin, async (req, res) => {
+      try {
+        const { id } = req.params;
+        const updateData = req.body;
+
+        delete updateData._id;
+        delete updateData.userId;
+        delete updateData.userName;
+        delete updateData.userEmail;
+        delete updateData.like;
+        delete updateData.likedBy;
+
+        await recipeCollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: updateData },
+        );
+
+        res.send({ success: true });
+      } catch (error) {
+        res.status(500).send({ success: false, error: error.message });
+      }
+    });
+
+    // Feature টগল
+    app.patch("/admin/recipes/:id/feature", verifyAdmin, async (req, res) => {
+      try {
+        const { id } = req.params;
+
+        const recipe = await recipeCollection.findOne({
+          _id: new ObjectId(id),
+        });
+        if (!recipe) {
+          return res
+            .status(404)
+            .send({ success: false, error: "Recipe not found" });
+        }
+
+        const nextFeatured = !recipe.featured;
+
+        await recipeCollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: { featured: nextFeatured } },
+        );
+
+        res.send({ success: true, featured: nextFeatured });
+      } catch (error) {
+        res.status(500).send({ success: false, error: error.message });
+      }
+    });
+
     app.post("/add-recipe", verifyToken, async (req, res) => {
       try {
         const recipe = req.body;
@@ -258,12 +469,10 @@ async function run() {
         }
 
         if (recipe.userId !== user.id) {
-          return res
-            .status(403)
-            .send({
-              success: false,
-              error: "You can only update your own recipes",
-            });
+          return res.status(403).send({
+            success: false,
+            error: "You can only update your own recipes",
+          });
         }
 
         // এই ফিল্ডগুলো ইউজার আপডেট করতে পারবে না
@@ -301,12 +510,10 @@ async function run() {
         }
 
         if (recipe.userId !== user.id) {
-          return res
-            .status(403)
-            .send({
-              success: false,
-              error: "You can only delete your own recipes",
-            });
+          return res.status(403).send({
+            success: false,
+            error: "You can only delete your own recipes",
+          });
         }
 
         await recipeCollection.deleteOne({ _id: new ObjectId(id) });
@@ -358,8 +565,6 @@ async function run() {
         res.status(500).send({ success: false, error: error.message });
       }
     });
-
-    
 
     // GET /customer/my-favourites এ
     app.get("/customer/my-favourites", verifyToken, async (req, res) => {
@@ -431,7 +636,6 @@ async function run() {
           .limit(limit)
           .toArray();
 
-        // প্রতিটা purchase এর সাথে সংশ্লিষ্ট রেসিপির (ছবি, ক্যাটাগরি ইত্যাদি) ডিটেইল জুড়ে দাও
         const recipeIds = purchases
           .filter((p) => p.recipeId)
           .map((p) => new ObjectId(p.recipeId));
