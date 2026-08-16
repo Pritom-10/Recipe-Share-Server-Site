@@ -324,7 +324,6 @@ async function run() {
 
     // index.js — run() এর ভেতরে যোগ করো
 
-  
     // index.js — /recipes/:id/report রুট প্রতিস্থাপন করো
     app.post("/recipes/:id/report", verifyToken, async (req, res) => {
       try {
@@ -546,7 +545,68 @@ async function run() {
         res.status(500).send({ success: false, error: error.message });
       }
     });
-    // index.js — run() এর ভেতরে যোগ করো
+    
+    app.post("/recipes/:id/favourite", verifyToken, async (req, res) => {
+      try {
+        const { id } = req.params;
+        const user = req.user;
+
+        const userDoc = await userCollection.findOne({
+          _id: new ObjectId(user.id),
+        });
+
+        if (!userDoc) {
+          return res.status(404).send({ error: "User not found in DB" });
+        }
+
+        const isFavourited = (userDoc?.favouriteRecipeIds || []).includes(id);
+
+        if (isFavourited) {
+          await userCollection.updateOne(
+            { _id: new ObjectId(user.id) },
+            { $pull: { favouriteRecipeIds: id } },
+          );
+          return res.send({ favourited: false });
+        } else {
+          await userCollection.updateOne(
+            { _id: new ObjectId(user.id) },
+            { $addToSet: { favouriteRecipeIds: id } },
+          );
+          return res.send({ favourited: true });
+        }
+      } catch (error) {
+        res.status(500).send({ success: false, error: error.message });
+      }
+    });
+   
+    app.get("/recipes/featured/list", async (req, res) => {
+      try {
+        const featuredRecipes = await recipeCollection
+          .find({ featured: true })
+          .sort({ _id: -1 })
+          .limit(8)
+          .toArray();
+
+        res.send(featuredRecipes);
+      } catch (error) {
+        res.status(500).send({ success: false, error: error.message });
+      }
+    });
+
+    app.get("/recipes/popular/list", async (req, res) => {
+      try {
+        const popularRecipes = await recipeCollection
+          .find()
+          .sort({ like: -1 })
+          .limit(8)
+          .toArray();
+
+        res.send(popularRecipes);
+      } catch (error) {
+        res.status(500).send({ success: false, error: error.message });
+      }
+    });
+
     app.patch("/recipes/:id", verifyToken, async (req, res) => {
       try {
         const { id } = req.params;
@@ -587,8 +647,7 @@ async function run() {
       } catch (error) {
         res.status(500).send({ success: false, error: error.message });
       }
-    });
-
+    })
     app.delete("/recipes/:id", verifyToken, async (req, res) => {
       try {
         const { id } = req.params;
