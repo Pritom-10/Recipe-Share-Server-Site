@@ -625,7 +625,7 @@ async function run() {
           });
         }
 
-        // এই ফিল্ডগুলো ইউজার আপডেট করতে পারবে না
+        
         delete updateData._id;
         delete updateData.userId;
         delete updateData.userName;
@@ -715,7 +715,7 @@ async function run() {
       }
     });
 
-    // GET /customer/my-favourites এ
+  
     app.get("/customer/my-favourites", verifyToken, async (req, res) => {
       try {
         const user = req.user;
@@ -765,7 +765,7 @@ async function run() {
       res.send({ total_page, skip, page, data });
     });
 
-    // index.js — run() এর ভেতরে যোগ করো
+
     app.get("/customer/my-purchased", verifyToken, async (req, res) => {
       try {
         const user = req.user;
