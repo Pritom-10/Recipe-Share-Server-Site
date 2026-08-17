@@ -827,9 +827,15 @@ async function run() {
 
         const totalLikes = myRecipes.reduce((sum, r) => sum + (r.like || 0), 0);
 
+          const userDoc = await userCollection.findOne({
+            _id: new ObjectId(user.id),
+          });
+          const totalFavourites = (userDoc?.favouriteRecipeIds || []).length;
+
         res.send({
           totalRecipes: myRecipes.length,
           totalLikes,
+          totalFavourites,
           recipes: myRecipes,
         });
       } catch (error) {
