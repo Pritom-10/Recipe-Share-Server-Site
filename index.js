@@ -242,7 +242,7 @@ async function run() {
       }
     });
 
-    // Admin দিয়ে যেকোনো রেসিপি এডিট
+  
     app.patch("/admin/recipes/:id", verifyAdmin, async (req, res) => {
       try {
         const { id } = req.params;
@@ -266,7 +266,7 @@ async function run() {
       }
     });
 
-    // Feature টগল
+   
     app.patch("/admin/recipes/:id/feature", verifyAdmin, async (req, res) => {
       try {
         const { id } = req.params;
