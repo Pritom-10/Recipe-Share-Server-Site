@@ -395,7 +395,6 @@ async function run() {
       }
     });
 
-    // Admin — রিপোর্ট resolve/dismiss করা
     app.patch("/admin/reports/:id", verifyAdmin, async (req, res) => {
       try {
         const { id } = req.params;
@@ -435,7 +434,7 @@ async function run() {
       }
     });
 
-    // প্রিমিয়াম আপগ্রেড কনফার্ম করা (Stripe payment সাকসেসের পর কল হবে)
+    
     app.post("/customer/upgrade-premium", verifyToken, async (req, res) => {
       try {
         const user = req.user;
