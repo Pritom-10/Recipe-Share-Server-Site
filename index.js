@@ -322,9 +322,7 @@ async function run() {
       }
     });
 
-    // index.js — run() এর ভেতরে যোগ করো
-
-    // index.js — /recipes/:id/report রুট প্রতিস্থাপন করো
+   
     app.post("/recipes/:id/report", verifyToken, async (req, res) => {
       try {
         const { id } = req.params;
@@ -545,7 +543,7 @@ async function run() {
         res.status(500).send({ success: false, error: error.message });
       }
     });
-    
+
     app.post("/recipes/:id/favourite", verifyToken, async (req, res) => {
       try {
         const { id } = req.params;
@@ -578,7 +576,7 @@ async function run() {
         res.status(500).send({ success: false, error: error.message });
       }
     });
-   
+
     app.get("/recipes/featured/list", async (req, res) => {
       try {
         const featuredRecipes = await recipeCollection
@@ -647,7 +645,7 @@ async function run() {
       } catch (error) {
         res.status(500).send({ success: false, error: error.message });
       }
-    })
+    });
     app.delete("/recipes/:id", verifyToken, async (req, res) => {
       try {
         const { id } = req.params;
