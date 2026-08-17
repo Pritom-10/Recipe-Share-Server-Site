@@ -201,9 +201,7 @@ async function run() {
       next();
     };
 
-    // index.js — run() এর ভেতরে যোগ করো
-
-    // সব রেসিপি (টেবিল আকারে, paginated)
+   
     app.get("/admin/recipes", verifyAdmin, async (req, res) => {
       try {
         const page = Number(req.query.page) || 1;
@@ -231,7 +229,7 @@ async function run() {
       }
     });
 
-    // Admin দিয়ে যেকোনো রেসিপি ডিলিট
+  
     app.delete("/admin/recipes/:id", verifyAdmin, async (req, res) => {
       try {
         const { id } = req.params;
