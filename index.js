@@ -114,7 +114,7 @@ async function run() {
       }
     });
 
-    // index.js — run() এর ভেতরে যোগ করো
+  
     app.get("/admin/users", verifyAdmin, async (req, res) => {
       try {
         const page = Number(req.query.page) || 1;
@@ -372,7 +372,7 @@ async function run() {
       }
     });
 
-    // Admin — সব রিপোর্ট লিস্ট (paginated)
+
     app.get("/admin/reports", verifyAdmin, async (req, res) => {
       try {
         const page = Number(req.query.page) || 1;
