@@ -114,7 +114,6 @@ async function run() {
       }
     });
 
-  
     app.get("/admin/users", verifyAdmin, async (req, res) => {
       try {
         const page = Number(req.query.page) || 1;
@@ -201,7 +200,6 @@ async function run() {
       next();
     };
 
-   
     app.get("/admin/recipes", verifyAdmin, async (req, res) => {
       try {
         const page = Number(req.query.page) || 1;
@@ -229,7 +227,6 @@ async function run() {
       }
     });
 
-  
     app.delete("/admin/recipes/:id", verifyAdmin, async (req, res) => {
       try {
         const { id } = req.params;
@@ -240,7 +237,6 @@ async function run() {
       }
     });
 
-  
     app.patch("/admin/recipes/:id", verifyAdmin, async (req, res) => {
       try {
         const { id } = req.params;
@@ -264,7 +260,6 @@ async function run() {
       }
     });
 
-   
     app.patch("/admin/recipes/:id/feature", verifyAdmin, async (req, res) => {
       try {
         const { id } = req.params;
@@ -286,6 +281,28 @@ async function run() {
         );
 
         res.send({ success: true, featured: nextFeatured });
+      } catch (error) {
+        res.status(500).send({ success: false, error: error.message });
+      }
+    });
+
+    app.get("/admin/transactions", verifyAdmin, async (req, res) => {
+      try {
+        const page = Number(req.query.page) || 1;
+        const limit = Number(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
+
+        const total_data = await paymentCollection.countDocuments();
+        const total_page = Math.ceil(total_data / limit);
+
+        const transactions = await paymentCollection
+          .find()
+          .sort({ _id: -1 })
+          .skip(skip)
+          .limit(limit)
+          .toArray();
+
+        res.send({ data: transactions, total_page, page, total_data });
       } catch (error) {
         res.status(500).send({ success: false, error: error.message });
       }
@@ -320,7 +337,6 @@ async function run() {
       }
     });
 
-   
     app.post("/recipes/:id/report", verifyToken, async (req, res) => {
       try {
         const { id } = req.params;
@@ -371,7 +387,6 @@ async function run() {
         res.status(500).send({ success: false, error: error.message });
       }
     });
-
 
     app.get("/admin/reports", verifyAdmin, async (req, res) => {
       try {
@@ -434,7 +449,6 @@ async function run() {
       }
     });
 
-    
     app.post("/customer/upgrade-premium", verifyToken, async (req, res) => {
       try {
         const user = req.user;
@@ -625,7 +639,6 @@ async function run() {
           });
         }
 
-        
         delete updateData._id;
         delete updateData.userId;
         delete updateData.userName;
@@ -715,7 +728,6 @@ async function run() {
       }
     });
 
-  
     app.get("/customer/my-favourites", verifyToken, async (req, res) => {
       try {
         const user = req.user;
@@ -764,7 +776,6 @@ async function run() {
         .toArray();
       res.send({ total_page, skip, page, data });
     });
-
 
     app.get("/customer/my-purchased", verifyToken, async (req, res) => {
       try {
@@ -827,10 +838,10 @@ async function run() {
 
         const totalLikes = myRecipes.reduce((sum, r) => sum + (r.like || 0), 0);
 
-          const userDoc = await userCollection.findOne({
-            _id: new ObjectId(user.id),
-          });
-          const totalFavourites = (userDoc?.favouriteRecipeIds || []).length;
+        const userDoc = await userCollection.findOne({
+          _id: new ObjectId(user.id),
+        });
+        const totalFavourites = (userDoc?.favouriteRecipeIds || []).length;
 
         res.send({
           totalRecipes: myRecipes.length,
@@ -844,8 +855,15 @@ async function run() {
     });
 
     app.post("/payment", async (req, res) => {
-      const { preparationTime, userId, recipeName, recipeId, session_id } =
-        req.body;
+      const {
+        preparationTime,
+        userId,
+        recipeName,
+        recipeId,
+        session_id,
+        userName,
+        userEmail
+      } = req.body;
 
       const isExistSession = await paymentCollection.findOne({ session_id });
       if (isExistSession) {
@@ -854,10 +872,15 @@ async function run() {
 
       const pay_result = await paymentCollection.insertOne({
         userId,
+        userName: userName || "N/A",
+        userEmail: userEmail || "N/A",
         session_id,
         preparationTime: Number(preparationTime),
         recipeName,
         recipeId,
+        amount: Number(preparationTime) * 100,
+        status: "completed",
+        createdAt: new Date(),
       });
 
       res.send({ pay_result });
