@@ -337,6 +337,31 @@ async function run() {
       }
     });
 
+    
+app.delete("/admin/reports/:id/remove-recipe", verifyAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const report = await reportCollection.findOne({ _id: new ObjectId(id) });
+    if (!report) {
+      return res.status(404).send({ success: false, error: "Report not found" });
+    }
+
+  
+    await recipeCollection.deleteOne({ _id: new ObjectId(report.recipeId) });
+
+   
+    await reportCollection.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: { status: "resolved" } },
+    );
+
+    res.send({ success: true });
+  } catch (error) {
+    res.status(500).send({ success: false, error: error.message });
+  }
+});
+
     app.post("/recipes/:id/report", verifyToken, async (req, res) => {
       try {
         const { id } = req.params;
