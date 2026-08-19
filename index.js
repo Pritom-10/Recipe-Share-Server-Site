@@ -83,9 +83,13 @@ const verifyAdmin = async (req, res, next) => {
 };
 
 
-async function run() {
-  try {
-    await client.connect();
+// async function run() {
+//   try {
+//     await client.connect();
+
+client.connect(() => {
+  console.log('connecting to Mongodb'); 
+}).catch(console.dir);
 
     const db = client.db("recipe");
     userCollection = client.db("recipe").collection("user");
@@ -911,15 +915,15 @@ app.delete("/admin/reports/:id/remove-recipe", verifyAdmin, async (req, res) => 
       res.send({ pay_result });
     });
 
-    await client.db("admin").command({ ping: 1 });
-    console.log(
-      "Pinged your deployment. You successfully connected to MongoDB!",
-    );
-  } finally {
-    // await client.close();
-  }
-}
-run().catch(console.dir);
+    // await client.db("admin").command({ ping: 1 });
+//     console.log(
+//       "Pinged your deployment. You successfully connected to MongoDB!",
+//     );
+//   } finally {
+//     // await client.close();
+//   }
+// }
+// run().catch(console.dir);
 
 app.get("/", (req, res) => {
   res.send("Server is running fine!");
@@ -928,3 +932,5 @@ app.get("/", (req, res) => {
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
+
+module.exports=app;
